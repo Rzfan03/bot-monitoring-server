@@ -1,7 +1,7 @@
 // config files to configuration ur bot
 const CONFIG = {
-  BotNumber: "6283162564970",
-  OwnNumber: "6283824425487",
+  BotNumber: "",
+  OwnNumber: "",
   prefix: '!',
   author: "Rzfan03",
   server: {
