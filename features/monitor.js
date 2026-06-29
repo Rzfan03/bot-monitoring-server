@@ -1,56 +1,48 @@
-const fs = require("fs")
-const path = require("path")
+const { getDb } = require("./db")
 const { fetchServerData } = require("../commands/server")
-
-const UPTIME_PATH = path.join(__dirname, "../data/uptime.json")
 
 let prevOnline = null
 let sessionStart = null
-let history = []
-
-function loadHistory() {
-  try {
-    return JSON.parse(fs.readFileSync(UPTIME_PATH, "utf-8"))
-  } catch {
-    return []
-  }
-}
-
-function saveHistory() {
-  fs.writeFileSync(UPTIME_PATH, JSON.stringify(history, null, 2))
-}
 
 function init() {
-  history = loadHistory()
-  prevOnline = null
-  sessionStart = Date.now()
+  const db = getDb()
+  const row = db.prepare("SELECT id, start_time FROM uptime_events WHERE end_time IS NULL ORDER BY id DESC LIMIT 1").get()
+  if (row) {
+    sessionStart = row.start_time
+    prevOnline = true
+  } else {
+    prevOnline = null
+    sessionStart = null
+  }
 }
 
 async function check(client, groupJid) {
   try {
     const data = await fetchServerData()
     const online = data.online === true
+    const db = getDb()
 
     if (prevOnline !== null && online !== prevOnline) {
       if (online) {
         sessionStart = Date.now()
+        db.prepare("INSERT INTO uptime_events (start_time) VALUES (?)").run(sessionStart)
         if (groupJid) {
-          await client.send(groupJid).text("✅ *Server Online!*\nServer Minecraft sekarang online.")
+          await client.send(groupJid).text("✅ *Server Online!*")
         }
       } else {
         if (sessionStart) {
-          history.push({ start: sessionStart, end: Date.now() })
-          saveHistory()
+          db.prepare("UPDATE uptime_events SET end_time = ? WHERE end_time IS NULL").run(Date.now())
         }
         sessionStart = null
         if (groupJid) {
-          await client.send(groupJid).text("❌ *Server Offline!*\nServer Minecraft sekarang offline.")
+          await client.send(groupJid).text("❌ *Server Offline!*")
         }
       }
     }
 
     if (prevOnline === null && online) {
       sessionStart = Date.now()
+      db.prepare("INSERT INTO uptime_events (start_time) VALUES (?)").run(sessionStart)
     }
 
     prevOnline = online
@@ -62,10 +54,12 @@ async function check(client, groupJid) {
 }
 
 function getUptime() {
-  const now = Date.now()
-  let totalMs = history.reduce((acc, s) => acc + (s.end - s.start), 0)
+  const db = getDb()
+  const row = db.prepare("SELECT COALESCE(SUM(end_time - start_time), 0) as total_ms FROM uptime_events WHERE end_time IS NOT NULL").get()
+  let totalMs = row.total_ms
+
   if (sessionStart) {
-    totalMs += now - sessionStart
+    totalMs += Date.now() - sessionStart
   }
 
   const totalHours = totalMs / 3600000
@@ -74,13 +68,20 @@ function getUptime() {
   const minutes = Math.floor((totalMs % 3600000) / 60000)
 
   let uptimePercent = 0
-  if (history.length > 0 || sessionStart) {
-    const first = history.length > 0 ? history[0].start : sessionStart
-    const elapsed = now - first
+  const firstRow = db.prepare("SELECT start_time FROM uptime_events ORDER BY id ASC LIMIT 1").get()
+  if (firstRow) {
+    const firstTime = firstRow.start_time
+    const elapsed = Date.now() - firstTime
     uptimePercent = elapsed > 0 ? Math.round((totalMs / elapsed) * 100) : 100
   }
 
-  return { days, hours, minutes, totalHours: Math.round(totalHours * 10) / 10, uptimePercent }
+  return {
+    days,
+    hours,
+    minutes,
+    totalHours: Math.round(totalHours * 10) / 10,
+    uptimePercent
+  }
 }
 
 module.exports = { check, getUptime, init }

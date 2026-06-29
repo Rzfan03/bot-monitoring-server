@@ -50,32 +50,66 @@ client.command('help', async (ctx) => {
 
 // === !reminder ===
 client.command('reminder', async (ctx) => {
-  const text = ctx.raw
+  const text = ctx.raw.trim()
+  const dateMatch = text.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s+(\d+)\s+(.+)/)
+
+  if (dateMatch) {
+    const dateStr = dateMatch[1]
+    const targetNumber = dateMatch[2]
+    const message = dateMatch[3]
+    const parsed = new Date(dateStr)
+    if (isNaN(parsed.getTime())) {
+      await ctx.reply("Format tanggal salah. Gunakan: YYYY-MM-DD HH:mm\nContoh: !reminder 2026-07-05 14:30 6281234567890 pesan")
+      return
+    }
+
+    const digits = targetNumber.replace(/\D/g, "")
+    if (digits.length < 8) {
+      await ctx.reply("Nomor target tidak valid")
+      return
+    }
+
+    const targetJid = `${digits}@s.whatsapp.net`
+    let sendAt = parsed.getTime()
+    if (sendAt <= Date.now()) sendAt = Date.now()
+
+    const reminder = reminderDb.add(ctx.senderId, message, targetJid, sendAt)
+    const sendTime = new Date(reminder.sendAt)
+    await ctx.reply(
+      `✅ *Reminder tersimpan!*\n\nPesan: ${message}\nTarget: ${digits}\nDikirim: ${sendTime.toLocaleString("id-ID")}`
+    )
+    return
+  }
+
   const sepIndex = text.indexOf("|")
-  if (sepIndex === -1) {
-    await ctx.reply("Format: !reminder <pesan> | <nomor>\nContoh: !reminder jangan lupa maintain | 6281234567890")
+  if (sepIndex !== -1) {
+    const message = text.slice(0, sepIndex).trim()
+    const targetNumber = text.slice(sepIndex + 1).trim()
+    if (!message || !targetNumber) {
+      await ctx.reply("Format: !reminder <pesan> | <nomor>")
+      return
+    }
+    const digits = targetNumber.replace(/\D/g, "")
+    if (digits.length < 8) {
+      await ctx.reply("Nomor target tidak valid")
+      return
+    }
+    const targetJid = `${digits}@s.whatsapp.net`
+    const reminder = reminderDb.add(ctx.senderId, message, targetJid)
+    const sendTime = new Date(reminder.sendAt)
+    await ctx.reply(
+      `✅ *Reminder tersimpan!*\n\nPesan: ${message}\nTarget: ${digits}\nDikirim: ${sendTime.toLocaleString("id-ID")}`
+    )
     return
   }
 
-  const message = text.slice(0, sepIndex).trim()
-  const targetNumber = text.slice(sepIndex + 1).trim()
-
-  if (!message || !targetNumber) {
-    await ctx.reply("Format: !reminder <pesan> | <nomor>")
-    return
-  }
-
-  const digits = targetNumber.replace(/\D/g, "")
-  if (digits.length < 8) {
-    await ctx.reply("Nomor target tidak valid")
-    return
-  }
-
-  const targetJid = `${digits}@s.whatsapp.net`
-  const reminder = reminderDb.add(ctx.senderId, message, targetJid)
-  const sendTime = new Date(reminder.sendAt)
   await ctx.reply(
-    `✅ *Reminder tersimpan!*\n\nPesan: ${message}\nTarget: ${digits}\nDikirim: ${sendTime.toLocaleString("id-ID")}`
+    "Format:\n" +
+    "  !reminder <YYYY-MM-DD HH:mm> <nomor> <pesan>\n" +
+    "  !reminder <pesan> | <nomor>\n\n" +
+    "Contoh:\n" +
+    "  !reminder 2026-07-05 14:30 6281234567890 maintenance\n" +
+    "  !reminder jaga kesehatan | 6281234567890"
   )
 })
 
